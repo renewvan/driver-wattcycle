@@ -1,0 +1,15 @@
+[Unit]
+Description=driver-wattcycle MQTT device
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/driver-wattcycle
+ExecStart=/opt/driver-wattcycle/.venv/bin/python -m driver_wattcycle.main --config /opt/driver-wattcycle/config.ini
+Restart=on-failure
+RestartSec=5
+User=renewvan
+
+[Install]
+WantedBy=multi-user.target
