@@ -7,6 +7,11 @@ def test_load_config_defaults() -> None:
     config = load_config()
     assert config.mqtt.port == 1883
     assert config.device.id == "wattcycle"
+    assert config.device.mac == ""
+    assert config.device.uuid_variant == "auto"
+    assert config.device.hci_adapter == "hci0"
+    assert config.device.connect_timeout_s == 10.0
+    assert config.device.retry_delay_s == 5.0
 
 
 def test_load_config_local_override(tmp_path: Path) -> None:

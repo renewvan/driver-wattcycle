@@ -11,39 +11,89 @@ unit-testable conversion math with no I/O, a layered
 publisher with LWT (`publisher.py`), a thin publish loop (`driver.py`), a
 systemd unit, and its own Dockerfile + CI publishing a versioned image.
 
-**This repo is a scaffold, not a working device yet** — `driver.py`'s
-`read_and_publish()` raises `NotImplementedError` until the design round
-below is resolved and implemented.
+**The design round below is resolved, but this repo is still a shell, not a
+working device** — `driver.py`'s `read_and_publish()` raises
+`NotImplementedError` until the BLE client is implemented (Step 5
+implementation, after the design round).
 
-## Design checklist (resolve before first real commit)
+## Design round (resolved)
 
-- [ ] **Sensing or remapping?** Does this device own the sensing (reads
-      hardware directly, like driver-tank's ADS1115) or remap an existing feed
-      (like driver-venus's Victron remap)?
-- [ ] **Topics published** — replace the section below with the real
-      `renewvan/wattcycle/<id>/<property>` fields, split into identity
-      (published once) vs live (republished every poll). See driver-tank's
-      README "Topics published" section for the shape to match.
-- [ ] **Hub schema** — does WattCycle extend an existing
-      `hub/schema/*.schema.json` entity, or need a new
-      `hub/schema/wattcycle.schema.json` + example fixtures
-      (`hub/schema/validate-examples.sh` must pass)?
-- [ ] **Wiring** — replace the section below with real hardware
-      wiring/config, or delete it if this device remaps an existing feed
-      instead of reading hardware directly.
-- [ ] **`DeviceConfig`** (`driver_wattcycle/config.py`) — add the hardware/feed
-      -specific fields this device needs, mirrored into `config.default.ini`.
-- [ ] **Hub integration** — once a version is tagged, add a
+Settled via the `scaffold-driver` skill's Step 5 round against the real
+hardware (WattCycle 314Ah Super Mini, DH04 BMS, verified live from the hub
+2026-10-23):
+
+- [x] **Sensing or remapping?** Owns sensing — a bleak BLE GATT client that
+      talks JBD protocol directly on the BMS (same approach as
+      `dbus-serialbattery`'s `lltjbd_ble.py`, minus the dbus/Venus layer).
+- [x] **Topics published** — see below; publishes the hub's existing
+      `battery` entity, not a wattcycle entity.
+- [x] **Hub schema** — extends `hub/schema/battery.schema.json` as-is; no
+      new schema, no fixtures, no demo scenario (existing-entity rule).
+- [x] **Wiring** — see below; BLE, no pairing, no auth on DH04.
+- [x] **`DeviceConfig`** — `mac`, `uuid_variant`, `hci_adapter`,
+      `connect_timeout_s`, `retry_delay_s`, mirrored in
+      `config.default.ini`.
+- [ ] **Hub integration** — pending a tagged image: add a
       `driver-wattcycle` service block to `hub/docker-compose.yml` (pattern:
-      driver-tank's block) and any new keys to `hub/.env.example`.
+      driver-tank's block) and any new keys to `hub/.env.example`. Open
+      detail for then: the container needs D-Bus access to the host's
+      BlueZ daemon (mount `/var/run/dbus` + `NET_ADMIN`, or host
+      networking) — unlike driver-tank's serial device.
 
 ## Topics published
 
-TODO — see the design checklist above.
+Retained, under `renewvan/battery/<id>/` (`id` from `[device] id`, default
+`wattcycle`; set `id = house` on a van where this BLE BMS is the single
+house bank and no Venus remap publishes that id):
+
+**Live fields** (republished every poll, `update_interval_ms` default 3000):
+- `soc_pct` — number 0–100, from JBD frame `0x03`
+- `voltage_v` — number, pack voltage (4S cell sum), frame `0x03`
+- `current_a` — number, signed (positive = charging, negative = discharging)
+- `power_w` — number, signed, computed `voltage_v × current_a`
+- `temperature_c` — number, max of the BMS's temperature probes (4 on the
+  tested DH04), frame `0x03`
+- `time_to_go_s` — number, optional, derived: `remaining_ah / |discharge
+  current|` (omitted while charging or near-zero current)
+- `charge_state` — `charging` / `discharging` / `idle`, derived from current
+  sign against a small deadband
+
+Not published (JBD reports them, but `battery.schema.json` has no field —
+candidate future schema extension, needs a hub PR first): per-cell
+voltages, cycle count, nominal/remaining capacity Ah, protection/balancing
+flags, production date.
+
+**Command topics**: none — the JBD BLE protocol is treated read-only;
+settings writes are out of scope.
+
+**Device liveness** (not battery-keyed):
+- `renewvan/battery/health` — `online`/`offline` via MQTT LWT
+- `renewvan/battery/info` — one retained JSON message describing this
+  Device (see `hub`'s `schema/device-info.schema.json`), published on every
+  connect before `online`.
+
+Payload shapes match `hub`'s `schema/battery.schema.json` for the entity
+and `hub`'s `schema/device-info.schema.json` for info.
 
 ## Wiring
 
-TODO — see the design checklist above.
+BLE only — no cable, no pairing:
+
+1. The battery advertises over BLE (name prefix `WT...`, e.g.
+   `WTaHdAZ2601270580`). Find its MAC on the hub:
+   `bluetoothctl scan on`.
+2. Set `mac` in `config.ini`. No PIN/pairing is needed for the DH04 BMS —
+   it accepts the JBD command frame straight after connect. (The XDZN
+   variant used in some WattCycle batches requires "HiLink" auth and is out
+   of scope for this driver.)
+3. `uuid_variant = auto` detects standard JBD (`ff01`/`ff02`) vs DH04
+   (`fff1`/`fff2`) GATT characteristics on connect (per
+   venus-os_dbus-serialbattery PR #441); force `jbd`/`dh04` only if a new
+   batch misbehaves.
+4. Requirements on the host: BlueZ running with the adapter unblocked
+   (`rfkill unblock bluetooth`), and exclusive access — only one client can
+   hold the battery's BLE link at a time, so this driver must be the only
+   thing talking to that MAC.
 
 ## Development
 
@@ -58,7 +108,7 @@ Keep conversion/decision logic in pure functions tested against fixture
 values — no MQTT broker or real hardware required for any of it. Before
 opening a PR: `pytest tests/ -v` must pass (same command CI runs), and any
 change to a published field needs a matching
-`hub/schema/wattcycle.schema.json` update in a `hub` PR (per
+`hub/schema/battery.schema.json` update in a `hub` PR (per
 `hub/docs/adr/0001-compose-services-via-pinned-images-not-git-submodules.md`,
 the two repos are never coupled at build time, only at the schema-version
 level).

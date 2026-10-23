@@ -32,12 +32,13 @@ class MqttConfig:
 
 @dataclass(frozen=True)
 class DeviceConfig:
-    id: str  # topic path segment, e.g. renewvan/wattcycle/<id>/...
+    id: str  # battery bank instance: renewvan/battery/<id>/<property>
     update_interval_ms: int
-    # TODO: add WattCycle-specific fields here (e.g. serial port,
-    # baud rate, I2C address, remote feed host) -- see driver-tank's
-    # TankConfig for the shape of a hardware-backed device, or
-    # driver-venus's config for a feed-remap device.
+    mac: str  # BLE address of the BMS, e.g. "AA:C2:37:0A:CC:05" (required at runtime)
+    uuid_variant: str  # "auto" | "jbd" (ff01/ff02) | "dh04" (fff1/fff2)
+    hci_adapter: str  # local BlueZ adapter, e.g. "hci0"
+    connect_timeout_s: float
+    retry_delay_s: float  # delay between BLE reconnect attempts
 
 
 @dataclass(frozen=True)
@@ -73,5 +74,10 @@ def load_config(
         device=DeviceConfig(
             id=device.get("id", "wattcycle"),
             update_interval_ms=device.getint("update_interval_ms", 3000),
+            mac=device.get("mac", ""),
+            uuid_variant=device.get("uuid_variant", "auto"),
+            hci_adapter=device.get("hci_adapter", "hci0"),
+            connect_timeout_s=device.getfloat("connect_timeout_s", 10.0),
+            retry_delay_s=device.getfloat("retry_delay_s", 5.0),
         ),
     )
