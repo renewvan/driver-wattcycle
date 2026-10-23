@@ -6,3 +6,7 @@
 
 [mqtt]
 host = 192.168.1.10
+
+[device]
+; BLE address of the battery BMS (required at runtime)
+mac = AA:C2:37:0A:CC:05

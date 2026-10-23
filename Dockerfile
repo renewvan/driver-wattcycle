@@ -6,7 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY driver_wattcycle/ driver_wattcycle/
-COPY config.default.ini .
+COPY manifest.json config.default.ini .
 
 ENTRYPOINT ["python", "-m", "driver_wattcycle.main"]
 CMD ["--config", "/app/config.ini"]

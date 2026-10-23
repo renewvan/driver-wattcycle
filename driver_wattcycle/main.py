@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 from pathlib import Path
 
@@ -25,7 +26,10 @@ def main() -> None:
     )
 
     config = load_config(default_path=DEFAULT_CONFIG_PATH, local_path=Path(args.config))
-    run(config)
+    try:
+        asyncio.run(run(config))
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":

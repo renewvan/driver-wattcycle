@@ -57,10 +57,11 @@ charging or in the near-zero-current deadband — a made-up number is worse
 than absent (schema marks it optional).
 _Avoid_: `ttl`, `time_remaining_s`.
 
-**`charge_state`**: `charging` / `discharging` / `idle`, derived from
-`current_a` sign against a small deadband. The BMS knows current direction
-only — it does **not** know charger stages (bulk/absorption/float), so this
-field is coarser than the Venus remap of the same bank.
+**`charge_state`**: `discharging` when `current_a` is beyond the deadband in
+the negative direction; otherwise omitted. The schema enum is charger-stage
+oriented (bulk/absorption/float/…), and the BMS only knows current direction,
+so it never publishes a stage it cannot know. This is coarser than the Venus
+remap of the same bank.
 
 **Not published (schema has no field)**: per-cell voltages, cycle count,
 nominal/remaining capacity (Ah), balancing/protection flags, production

@@ -11,10 +11,9 @@ unit-testable conversion math with no I/O, a layered
 publisher with LWT (`publisher.py`), a thin publish loop (`driver.py`), a
 systemd unit, and its own Dockerfile + CI publishing a versioned image.
 
-**The design round below is resolved, but this repo is still a shell, not a
-working device** — `driver.py`'s `read_and_publish()` raises
-`NotImplementedError` until the BLE client is implemented (Step 5
-implementation, after the design round).
+**Implemented and verified live** against a WattCycle 314Ah Super Mini
+(DH04 BMS) on the hub: BLE connect with UUID auto-detection, JBD 0x03
+polling, and MQTT publishing to `renewvan/battery/<id>/` (2026-10-23).
 
 ## Design round (resolved)
 
@@ -53,10 +52,12 @@ house bank and no Venus remap publishes that id):
 - `power_w` — number, signed, computed `voltage_v × current_a`
 - `temperature_c` — number, max of the BMS's temperature probes (4 on the
   tested DH04), frame `0x03`
-- `time_to_go_s` — number, optional, derived: `remaining_ah / |discharge
-  current|` (omitted while charging or near-zero current)
-- `charge_state` — `charging` / `discharging` / `idle`, derived from current
-  sign against a small deadband
+- `time_to_go_s` — whole seconds, derived `remaining_ah / |discharge
+  current|`; omitted while charging or inside the current deadband
+- `charge_state` — `"discharging"` only; omitted otherwise. The schema's
+  enum is charger-stage oriented (bulk/absorption/float…) and a BMS only
+  knows current direction, so per the schema's guidance only the state it
+  actually knows is published.
 
 Not published (JBD reports them, but `battery.schema.json` has no field —
 candidate future schema extension, needs a hub PR first): per-cell
@@ -94,6 +95,12 @@ BLE only — no cable, no pairing:
    (`rfkill unblock bluetooth`), and exclusive access — only one client can
    hold the battery's BLE link at a time, so this driver must be the only
    thing talking to that MAC.
+5. Stale link recovery: a killed process (`kill -9`, power loss) can leave
+   the BMS connected at the controller level. A connected BMS stops
+   advertising, so scan-based reconnect fails. Fix: `sudo systemctl restart
+   bluetooth`, or `hcitool con` to confirm, then restart the driver. SIGTERM
+   and SIGINT disconnect cleanly; the driver connects by address first and
+   only scans on cold start.
 
 ## Development
 

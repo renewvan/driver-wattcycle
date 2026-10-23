@@ -1,52 +1,80 @@
-"""Publish loop: TODO describe WattCycle read -> publish ->
-renewvan/wattcycle/<id>/<property>.
+"""Publish loop: poll the WattCycle BMS over BLE and publish the hub's
+battery entity under renewvan/battery/<id>/<property>.
 
-This is a scaffolded stub -- see the design checklist in README.md. Fill
-in, in order:
-
-1. A reader for the physical hardware/feed (see driver-tank's adc.py for a
-   device that owns the sensing, or driver-venus's Victron MQTT subscription
-   for a device that remaps an existing feed -- Q1 of the design round
-   decides which shape this is).
-2. The fields this device publishes, matching a hub/schema/<entity>.schema.json
-   contract (new entity) or an existing one (Q2/Q3 of the design round).
-3. Identity fields (published once at startup) vs live fields (republished
-   every poll) -- see driver-tank's publish_identity()/read_and_publish()
-   split for the pattern.
+This driver owns the sensing (Q1): a bleak BLE GATT client talking JBD
+protocol to a DH04/JBD BMS. All live fields, no identity fields — the
+battery schema's properties are all per-poll; device identity goes to
+renewvan/battery/info via the manifest (see publisher.py).
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
-import time
+import os
+import signal
 
+from driver_wattcycle.ble import BleError, WattCycleBle
 from driver_wattcycle.config import AppConfig
+from driver_wattcycle.device_info import build_info, read_board_serial
+from driver_wattcycle.fields import live_fields
 from driver_wattcycle.publisher import Publisher
 
 logger = logging.getLogger(__name__)
 
 
 def _topic(device_id: str, prop: str) -> str:
-    return f"renewvan/wattcycle/{device_id}/{prop}"
+    return f"renewvan/battery/{device_id}/{prop}"
 
 
-def read_and_publish(publisher: Publisher, config: AppConfig) -> None:
-    """TODO: read the hardware/feed and publish live fields via
-    publisher.publish(_topic(config.device.id, "<property>"), payload).
-    """
-    raise NotImplementedError(
-        "Implement the WattCycle read+publish step (see this module's docstring)"
+async def read_and_publish(publisher: Publisher, ble: WattCycleBle, config: AppConfig) -> None:
+    """One poll: read the BMS and publish every derived live field."""
+    reading = await ble.read()
+    for prop, value in live_fields(reading).items():
+        publisher.publish(_topic(config.device.id, prop), json.dumps(value))
+    logger.debug(
+        "battery %s: %.2fV %.2fA %d%%",
+        config.device.id, reading.voltage_v, reading.current_a, reading.soc_pct,
     )
 
 
-def run(config: AppConfig) -> None:
-    publisher = Publisher(config.mqtt)
+async def run(config: AppConfig) -> None:
+    if not config.device.mac:
+        raise SystemExit(
+            "device.mac is required (BLE address of the battery, e.g. AA:C2:37:0A:CC:05)"
+        )
+    # Version is stamped by the release build (DEVICE_VERSION); unset reports "dev".
+    info = build_info(os.environ.get("DEVICE_VERSION"), read_board_serial())
+    publisher = Publisher(config.mqtt, info)
+    ble = WattCycleBle(
+        mac=config.device.mac,
+        uuid_variant=config.device.uuid_variant,
+        adapter=config.device.hci_adapter,
+        connect_timeout_s=config.device.connect_timeout_s,
+    )
     publisher.connect()
+    # Cancel the poll loop on SIGTERM/SIGINT (systemctl stop) so the finally
+    # block disconnects the BMS -- a leaked link stops it advertising, which
+    # would block reconnects (see ble._ensure_connected).
+    task = asyncio.current_task()
+    assert task is not None
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, task.cancel)
     try:
         while True:
-            read_and_publish(publisher, config)
-            time.sleep(config.device.update_interval_ms / 1000)
-    except KeyboardInterrupt:
+            try:
+                await read_and_publish(publisher, ble, config)
+            except BleError as exc:
+                logger.warning(
+                    "BLE read failed (%s); retrying in %.0fs", exc, config.device.retry_delay_s
+                )
+                await asyncio.sleep(config.device.retry_delay_s)
+                continue
+            await asyncio.sleep(config.device.update_interval_ms / 1000)
+    except asyncio.CancelledError:
         logger.info("Shutting down")
     finally:
+        await ble.close()
         publisher.disconnect()
