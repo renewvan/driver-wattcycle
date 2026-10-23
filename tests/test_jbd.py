@@ -1,5 +1,5 @@
 """JBD protocol tests against bytes captured live from the WattCycle 314Ah
-Super Mini (DH04 BMS, advertised as WTaHdAZ2601270580, MAC AA:C2:37:0A:CC:05)
+Super Mini (DH04 BMS)
 on 2026-10-23. The capture is the independent source of truth: expected
 values were read off the bus with gatttool before this module existed.
 """

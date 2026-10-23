@@ -34,7 +34,7 @@ class MqttConfig:
 class DeviceConfig:
     id: str  # battery bank instance: renewvan/battery/<id>/<property>
     update_interval_ms: int
-    mac: str  # BLE address of the BMS, e.g. "AA:C2:37:0A:CC:05" (required at runtime)
+    mac: str  # BLE address of the BMS, e.g. "XX:XX:XX:XX:XX:XX" (required at runtime)
     uuid_variant: str  # "auto" | "jbd" (ff01/ff02) | "dh04" (fff1/fff2)
     hci_adapter: str  # local BlueZ adapter, e.g. "hci0"
     connect_timeout_s: float

@@ -80,8 +80,7 @@ and `hub`'s `schema/device-info.schema.json` for info.
 
 BLE only — no cable, no pairing:
 
-1. The battery advertises over BLE (name prefix `WT...`, e.g.
-   `WTaHdAZ2601270580`). Find its MAC on the hub:
+1. The battery advertises over BLE (name prefix `WT...`). Find its MAC on the hub:
    `bluetoothctl scan on`.
 2. Set `mac` in `config.ini`. No PIN/pairing is needed for the DH04 BMS —
    it accepts the JBD command frame straight after connect. (The XDZN

@@ -1,5 +1,5 @@
 """JBD protocol pure functions, tested against bytes captured live from the
-WattCycle 314Ah Super Mini (DH04 BMS, WTaHdAZ2601270580) on 2026-10-23.
+WattCycle 314Ah Super Mini (DH04 BMS) on 2026-10-23.
 
 Frame format (read): request  DD A5 <reg> <len=0> <cksum:2> 77
                      response DD <reg> <len:2 BE> <payload> <cksum:2> 77
