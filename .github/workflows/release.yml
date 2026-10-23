@@ -32,6 +32,7 @@ jobs:
     with:
       kind: image
       image: driver-wattcycle
+      device-version-arg: true
       python-version: "3.12"
       test-command: pip install -r requirements.txt -r requirements-test.txt && pytest tests/ -v --tb=short
       bump: ${{ inputs.bump }}
