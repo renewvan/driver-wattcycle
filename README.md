@@ -3,9 +3,9 @@
 Just for WattCycle: BLE driver for WattCycle JBD BMS batteries, publishing battery telemetry over MQTT.
 
 Scaffolded from `renewvan/driver-tank`'s reference shape via `renewvan/skills`'
-`scaffold-driver` skill (per the **Device** term in `hub/docs/architecture.md`'s
-Terminology section: "anything that publishes one specific device or feed
-onto the renewvan bus, normalized into the device model"). Layout: pure,
+`scaffold-driver` skill (per the **Driver** term in `hub/docs/architecture.md`'s
+Terminology section: anything that publishes one specific device or feed
+onto the renewvan bus, normalized into the device model). Layout: pure,
 unit-testable conversion math with no I/O, a layered
 `config.default.ini`/`config.ini` loader (`config.py`), a persistent MQTT
 publisher with LWT (`publisher.py`), a thin publish loop (`driver.py`), a
@@ -29,8 +29,8 @@ hardware (WattCycle 314Ah Super Mini, DH04 BMS, verified live from the hub
 - [x] **Hub schema** — extends `hub/schema/battery.schema.json` as-is; no
       new schema, no fixtures, no demo scenario (existing-entity rule).
 - [x] **Wiring** — see below; BLE, no pairing, no auth on DH04.
-- [x] **`DeviceConfig`** — `mac`, `uuid_variant`, `hci_adapter`,
-      `connect_timeout_s`, `retry_delay_s`, mirrored in
+- [x] **`DriverConfig`** — `mac`, `uuid_variant`, `hci_adapter`,
+      `connect_timeout_s`, `retry_delay_s`, `name`, mirrored in
       `config.default.ini`.
 - [ ] **Hub integration** — pending a tagged image: add a
       `driver-wattcycle` service block to `hub/docker-compose.yml` (pattern:
@@ -41,7 +41,7 @@ hardware (WattCycle 314Ah Super Mini, DH04 BMS, verified live from the hub
 
 ## Topics published
 
-Retained, under `renewvan/battery/<id>/` (`id` from `[device] id`, default
+Retained, under `renewvan/battery/<id>/` (`id` from `[driver] id`, default
 `wattcycle`; set `id = house` on a van where this BLE BMS is the single
 house bank and no Venus remap publishes that id):
 
@@ -67,14 +67,27 @@ flags, production date.
 **Command topics**: none — the JBD BLE protocol is treated read-only;
 settings writes are out of scope.
 
-**Device liveness** (not battery-keyed):
-- `renewvan/battery/health` — `online`/`offline` via MQTT LWT
-- `renewvan/battery/info` — one retained JSON message describing this
-  Device (see `hub`'s `schema/device-info.schema.json`), published on every
+**Instance identity** (retained, republished on every MQTT (re)connect):
+- `renewvan/battery/<id>/driver` — `"wattcycle"`, the owning Driver's key
+- `renewvan/battery/<id>/name` — optional human label, from `[driver] name`
+  in `config.ini` (e.g. `name = House bank`). Not published when unset: the
+  driver does not read the BMS's advertised BLE name.
+
+**Driver liveness** (keyed by the Driver, not the battery entity):
+- `renewvan/wattcycle/health` — `online`/`offline` via MQTT LWT
+- `renewvan/wattcycle/info` — one retained JSON message describing this
+  Driver (see `hub`'s `schema/driver-info.schema.json`), published on every
   connect before `online`.
 
+The Driver key is `wattcycle` (was `battery`; named for the source per hub
+ADR-0008). **Cutover:** clear the stale retained topics once with
+`mosquitto_pub -r -n -t renewvan/battery/info` and
+`mosquitto_pub -r -n -t renewvan/battery/health`. A live `config.ini` keeps
+its `[device]` section until edited to `[driver]` (no compatibility shim), and
+the image build arg is now `DRIVER_VERSION`.
+
 Payload shapes match `hub`'s `schema/battery.schema.json` for the entity
-and `hub`'s `schema/device-info.schema.json` for info.
+and `hub`'s `schema/driver-info.schema.json` for info.
 
 ## Wiring
 

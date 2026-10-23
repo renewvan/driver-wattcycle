@@ -7,6 +7,6 @@
 [mqtt]
 host = 192.168.1.10
 
-[device]
+[driver]
 ; BLE address of the battery BMS (required). Find it with `bluetoothctl scan on`.
 mac =

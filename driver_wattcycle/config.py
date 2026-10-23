@@ -31,7 +31,7 @@ class MqttConfig:
 
 
 @dataclass(frozen=True)
-class DeviceConfig:
+class DriverConfig:
     id: str  # battery bank instance: renewvan/battery/<id>/<property>
     update_interval_ms: int
     mac: str  # BLE address of the BMS, e.g. "XX:XX:XX:XX:XX:XX" (required at runtime)
@@ -39,12 +39,13 @@ class DeviceConfig:
     hci_adapter: str  # local BlueZ adapter, e.g. "hci0"
     connect_timeout_s: float
     retry_delay_s: float  # delay between BLE reconnect attempts
+    name: str | None  # optional human label, published retained as renewvan/battery/<id>/name
 
 
 @dataclass(frozen=True)
 class AppConfig:
     mqtt: MqttConfig
-    device: DeviceConfig
+    driver: DriverConfig
 
 
 def load_config(
@@ -59,7 +60,7 @@ def load_config(
         logger.info("No local config override at %s; using defaults only", local_path)
 
     mqtt = parser["mqtt"]
-    device = parser["device"]
+    driver = parser["driver"]
 
     return AppConfig(
         mqtt=MqttConfig(
@@ -71,13 +72,14 @@ def load_config(
             reconnect_min_delay=mqtt.getfloat("reconnect_min_delay", 1.0),
             reconnect_max_delay=mqtt.getfloat("reconnect_max_delay", 30.0),
         ),
-        device=DeviceConfig(
-            id=device.get("id", "wattcycle"),
-            update_interval_ms=device.getint("update_interval_ms", 3000),
-            mac=device.get("mac", ""),
-            uuid_variant=device.get("uuid_variant", "auto"),
-            hci_adapter=device.get("hci_adapter", "hci0"),
-            connect_timeout_s=device.getfloat("connect_timeout_s", 10.0),
-            retry_delay_s=device.getfloat("retry_delay_s", 5.0),
+        driver=DriverConfig(
+            id=driver.get("id", "wattcycle"),
+            update_interval_ms=driver.getint("update_interval_ms", 3000),
+            mac=driver.get("mac", ""),
+            uuid_variant=driver.get("uuid_variant", "auto"),
+            hci_adapter=driver.get("hci_adapter", "hci0"),
+            connect_timeout_s=driver.getfloat("connect_timeout_s", 10.0),
+            retry_delay_s=driver.getfloat("retry_delay_s", 5.0),
+            name=driver.get("name", "").strip() or None,
         ),
     )

@@ -7,12 +7,22 @@ Super Mini (DH04 BMS) read over BLE from the hub.
 
 ## Language
 
-**Battery bank instance (`[device] id`)**: one BMS = one bank. Topic is
+**Driver key (`wattcycle`)**: this Driver's identity on the bus —
+`manifest.json` `driver`, `renewvan/wattcycle/info`, `renewvan/wattcycle/health`,
+and the retained `driver` field of its battery instance. It is the repo name
+minus `driver-`: named for the source, not the entity (hub ADR-0008).
+_Avoid_: `battery` as the key — that is the entity, and was a bug here.
+
+**Battery bank instance (`[driver] id`)**: one BMS = one bank. Topic is
 `renewvan/battery/<id>/<property>`, *not* `renewvan/wattcycle/...` — the
 driver publishes the hub's existing `battery` entity; the repo name is the
 source, the topic is the entity (hub ADR-0008). Default id `wattcycle`;
 set `house` when this BMS is the van's single house bank and nothing else
-(like driver-venus's remap) publishes that id.
+publishes that id. A Victron shunt via driver-venus and this BMS can both
+describe the same physical bank; the instance publishes retained
+`renewvan/battery/<id>/driver` = `"wattcycle"` (and `name` when `[driver]
+name` is set) so consumers know which Driver owns it, and the dashboard lets
+the user pick the **Primary battery** (`renewvan/hub/primary-battery`).
 
 **JBD protocol**: the command/response framing the BMS speaks over BLE —
 request `DD A5 <cmd> <len> <cksum> 77`, response `DD <cmd> ... <cksum> 77`.
