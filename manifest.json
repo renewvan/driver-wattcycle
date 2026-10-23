@@ -1,6 +1,6 @@
 {
-  "device": "battery",
-  "product": "WattCycle JBD BMS battery device",
+  "driver": "wattcycle",
+  "product": "WattCycle JBD BMS battery driver",
   "source": "JBD/DH04 BMS over BLE (BlueZ)",
   "publishes": ["battery"],
   "manufacturer": "renewvan",

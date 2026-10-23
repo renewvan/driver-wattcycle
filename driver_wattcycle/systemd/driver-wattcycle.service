@@ -1,5 +1,5 @@
 [Unit]
-Description=driver-wattcycle MQTT device
+Description=driver-wattcycle MQTT driver
 After=network-online.target
 Wants=network-online.target
 

@@ -2,8 +2,8 @@
 
 Shared boilerplate across every renewvan/driver-* repo (see
 driver-tank/driver_tank/publisher.py): connect with retry/backoff, an LWT on a
-health topic so downstream consumers can detect a dead device, and a
-long-lived connection -- this device is the source of truth, not a
+health topic so downstream consumers can detect a dead driver, and a
+long-lived connection -- this driver is the source of truth, not a
 re-publisher.
 """
 
@@ -18,14 +18,21 @@ from driver_wattcycle.config import MqttConfig
 
 logger = logging.getLogger(__name__)
 
-INFO_TOPIC = "renewvan/battery/info"
-HEALTH_TOPIC = "renewvan/battery/health"
+# The Driver key (hub ADR-0008: named for the source, not the entity). Equals
+# manifest.json `driver`; the entity topics stay renewvan/battery/<id>/...
+DRIVER_KEY = "wattcycle"
+INFO_TOPIC = f"renewvan/{DRIVER_KEY}/info"
+HEALTH_TOPIC = f"renewvan/{DRIVER_KEY}/health"
 
 
 class Publisher:
-    def __init__(self, config: MqttConfig, info: str) -> None:
+    def __init__(
+        self, config: MqttConfig, info: str, identity: dict[str, str] | None = None
+    ) -> None:
         self._config = config
         self._info = info
+        # Retained entity-identity topics (driver, name), republished on every (re)connect.
+        self._identity = identity or {}
         self._client = mqtt.Client(client_id=config.client_id, clean_session=False)
         if config.username:
             self._client.username_pw_set(config.username, config.password)
@@ -44,6 +51,8 @@ class Publisher:
             # Info first, then online: a consumer that sees online always finds info
             # already retained (hub ADR-0011).
             client.publish(INFO_TOPIC, payload=self._info, qos=1, retain=True)
+            for topic, payload in self._identity.items():
+                client.publish(topic, payload=payload, qos=1, retain=True)
             client.publish(HEALTH_TOPIC, payload="online", qos=1, retain=True)
             for topic in self._subscriptions:
                 client.subscribe(topic, qos=1)
