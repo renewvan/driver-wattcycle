@@ -66,9 +66,38 @@ house bank and no Venus remap publishes that id):
   knows current direction, so per the schema's guidance only the state it
   actually knows is published.
 
-Not published (JBD reports them, but `battery.schema.json` has no field —
-candidate future schema extension, needs a hub PR first): per-cell
-voltages, cycle count, protection/balancing flags, production date.
+**Per-cell BMS data** (hub ADR 0022; all retained, republished every poll;
+needs a second read of JBD frame `0x04` per poll):
+- `cell_voltages_v` — array of volts (3 decimals), index i = cell i+1, from
+  `0x04` (2-byte big-endian mV per cell). `null` = unreadable slot (0 or
+  0xFFFF mV), never 0; the array keeps its length. Absent (and cleared) when
+  `0x04` is silent or its length disagrees with the `0x03` `cell_count`.
+- `cell_voltage_max_v` / `cell_voltage_min_v` / `cell_voltage_delta_v` —
+  derived over the non-null cells; all three or none, in the same cycle as
+  the array; omitted with fewer than 2 readable cells.
+- `cell_balancing` — boolean array index-aligned with `cell_voltages_v`
+  (balance words, bit i = cell i+1); `null` for a cell whose voltage is
+  unreadable; absent if alignment cannot be guaranteed.
+- `temperatures_c` — array, one per `0x03` probe, `null` for an unreadable
+  probe. `temperature_c` stays the max of the readable probes.
+- `allow_charge` / `allow_discharge` — booleans from the FET byte (bit0
+  charge, bit1 discharge).
+- `protections` — array of names from protection bits 0-12 in vocabulary
+  order; `[]` = none active; a set bit with no name publishes `other` and
+  logs the raw word.
+- Never published: charge/discharge limits (the BMS reports none; this
+  driver never computes them).
+
+When a property stops being published (cell count change leaves
+`cell_balancing` misaligned, a silent BMS) its retained topic is cleared
+with an empty payload. On a cell-count change the arrays are replaced
+wholesale at the new length.
+
+The balance, protection and FET **bit layouts are unverified on hardware**
+(the DH04 capture only saw `0x0000`/`0x03` at rest); see issue #5.
+
+Not published (JBD reports them; no schema field): cycle count, production
+date.
 
 **Command topics**: none — the JBD BLE protocol is treated read-only;
 settings writes are out of scope.

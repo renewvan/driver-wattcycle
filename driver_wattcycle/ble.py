@@ -16,14 +16,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 
 from driver_wattcycle.jbd import (
+    REG_CELLS,
     REG_GENERAL,
     BatteryReading,
     build_read_command,
+    decode_cells,
     decode_general,
     extract_frames,
     validate_frame,
@@ -119,19 +122,26 @@ class WattCycleBle:
         self._buffer.clear()
         await client.start_notify(self._rx_uuid, self._on_notify)
         await asyncio.sleep(0.2)  # let the subscription settle before first write
+
+    async def _request(self, reg: int) -> bytes:
+        """Send one read command and return the validated response payload."""
+        assert self._client is not None and self._tx_uuid is not None
+        self._buffer.clear()
+        self._response = asyncio.get_running_loop().create_future()
+        await self._client.write_gatt_char(self._tx_uuid, build_read_command(reg), response=False)
+        frame = await asyncio.wait_for(self._response, timeout=RESPONSE_TIMEOUT_S)
+        return validate_frame(frame, expect_reg=reg)
+
     async def read(self) -> BatteryReading:
-        """One poll: request the 0x03 register and decode the response."""
-        loop = asyncio.get_running_loop()
+        """One poll: request 0x03 (general), then 0x04 (cell voltages).
+
+        0x03 failing is a failed poll (BleError). 0x04 failing only drops the
+        cell data for this poll: the pack info is still good, and a silent
+        cell register publishes no cells (hub ADR 0022).
+        """
         try:
             await self._ensure_connected()
-            assert self._client is not None and self._tx_uuid is not None
-            self._buffer.clear()
-            self._response = loop.create_future()
-            await self._client.write_gatt_char(
-                self._tx_uuid, build_read_command(REG_GENERAL), response=False
-            )
-            frame = await asyncio.wait_for(self._response, timeout=RESPONSE_TIMEOUT_S)
-            return decode_general(validate_frame(frame, expect_reg=REG_GENERAL))
+            reading = decode_general(await self._request(REG_GENERAL))
         except (TimeoutError, BleakError, ValueError, AssertionError) as exc:
             # ValueError: a desynced notification stream yields a frame that
             # fails validation -- a data error, not a link error, but the
@@ -139,6 +149,17 @@ class WattCycleBle:
             # and let the poll loop retry (see tests/test_ble.py).
             await self.close()
             raise BleError(f"read from {self._mac} failed: {exc}") from exc
+        try:
+            cells = decode_cells(await self._request(REG_CELLS), reading.cell_count)
+            if cells is None:
+                logger.warning("cell payload does not match cell_count %d", reading.cell_count)
+        except (TimeoutError, ValueError) as exc:
+            logger.warning("cell voltage read failed (%s); publishing no cells this poll", exc)
+            cells = None
+        except BleakError as exc:
+            await self.close()
+            raise BleError(f"read from {self._mac} failed: {exc}") from exc
+        return replace(reading, cell_voltages_v=cells)
 
     async def close(self) -> None:
         client, self._client = self._client, None

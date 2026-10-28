@@ -59,9 +59,7 @@ class StubBle:
         return next(self._readings)
 
 
-async def _poll(
-    publisher: RecordingPublisher, readings: list[BatteryReading], last: set
-) -> None:
+async def _poll(publisher: RecordingPublisher, readings: list[BatteryReading], last: set) -> None:
     await read_and_publish(
         publisher,
         StubBle(readings),
@@ -95,3 +93,75 @@ def test_no_clears_while_fields_stay_present() -> None:
     asyncio.run(_poll(publisher, [DISCHARGING], last))
     asyncio.run(_poll(publisher, [DISCHARGING], last))
     assert publisher.cleared == []
+
+
+# --- per-cell data on the bus (hub ADR 0022) ---
+
+import json  # noqa: E402
+from dataclasses import replace  # noqa: E402
+
+T = "renewvan/battery/wattcycle/"
+CELLS_4 = replace(
+    DISCHARGING,
+    balance_word=0,
+    protection_word=0,
+    fet_byte=0x03,
+    cell_voltages_v=(3.331, 3.334, 3.333, 3.333),
+)
+CELLS_8 = replace(
+    CELLS_4,
+    cell_count=8,
+    temperatures_c=(13.0, 13.0),
+    cell_voltages_v=(3.3, 3.3, 3.3, 3.3, 3.3, 3.3, 3.3, 3.31),
+)
+
+
+def test_cell_arrays_are_published_as_json_with_null_slots() -> None:
+    import asyncio
+
+    publisher, last = RecordingPublisher(), set()
+    reading = replace(CELLS_4, cell_voltages_v=(3.331, None, 3.333, 3.333))
+    asyncio.run(_poll(publisher, [reading], last))
+    assert json.loads(publisher.published[T + "cell_voltages_v"]) == [3.331, None, 3.333, 3.333]
+    assert json.loads(publisher.published[T + "cell_balancing"]) == [False, None, False, False]
+    assert json.loads(publisher.published[T + "protections"]) == []
+    assert publisher.published[T + "allow_charge"] == "true"
+    assert publisher.published[T + "cell_voltage_delta_v"] == "0.002"
+
+
+def test_cell_count_change_replaces_arrays_wholesale_in_one_cycle() -> None:
+    import asyncio
+
+    publisher, last = RecordingPublisher(), set()
+    asyncio.run(_poll(publisher, [CELLS_4], last))
+    asyncio.run(_poll(publisher, [CELLS_8], last))
+    assert len(json.loads(publisher.published[T + "cell_voltages_v"])) == 8
+    assert len(json.loads(publisher.published[T + "cell_balancing"])) == 8
+    assert len(json.loads(publisher.published[T + "temperatures_c"])) == 2
+    assert publisher.published[T + "cell_voltage_delta_v"] == "0.01"
+    assert publisher.cleared == []  # replaced, not retracted
+
+
+def test_silent_cell_register_clears_every_cell_property() -> None:
+    import asyncio
+
+    publisher, last = RecordingPublisher(), set()
+    asyncio.run(_poll(publisher, [CELLS_4], last))
+    asyncio.run(_poll(publisher, [replace(CELLS_4, cell_voltages_v=None)], last))
+    assert sorted(publisher.cleared) == [
+        T + "cell_balancing",
+        T + "cell_voltage_delta_v",
+        T + "cell_voltage_max_v",
+        T + "cell_voltage_min_v",
+        T + "cell_voltages_v",
+    ]
+
+
+def test_scalars_cleared_when_cells_drop_below_two_readable() -> None:
+    import asyncio
+
+    publisher, last = RecordingPublisher(), set()
+    asyncio.run(_poll(publisher, [CELLS_4], last))
+    asyncio.run(_poll(publisher, [replace(CELLS_4, cell_voltages_v=(3.3, None, None, None))], last))
+    assert T + "cell_voltage_max_v" in publisher.cleared
+    assert json.loads(publisher.published[T + "cell_voltages_v"]) == [3.3, None, None, None]
