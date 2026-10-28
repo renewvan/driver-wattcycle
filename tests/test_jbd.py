@@ -93,3 +93,24 @@ def test_decode_general_matches_live_values() -> None:
 def test_decode_general_rejects_short_payload() -> None:
     with pytest.raises(ValueError, match="too short"):
         decode_general(b"\x00" * 22)
+
+
+def test_validate_frame_checks_expected_register_when_asked() -> None:
+    # A 0x04 (cell voltages) frame, well-framed in its own right, must not
+    # pass as the response to a 0x03 request — the BlueZ multi-client
+    # fan-out can splice foreign bytes into the stream (see the
+    # ble-second-notify-client issue).
+    from driver_wattcycle.jbd import _checksum
+
+    payload = bytes.fromhex("0d0c0d0c0d0b0d0a")  # 4 cell voltages, mV
+    frame = (
+        b"\xdd\x04"
+        + len(payload).to_bytes(2, "big")
+        + payload
+        + _checksum(len(payload).to_bytes(2, "big") + payload).to_bytes(2, "big")
+        + b"\x77"
+    )
+    assert validate_frame(frame) == payload  # no expectation: still valid
+    with pytest.raises(ValueError, match="register"):
+        validate_frame(frame, expect_reg=0x03)
+    assert validate_frame(CAPTURE_FRAME, expect_reg=0x03) == CAPTURE_FRAME[4:-3]

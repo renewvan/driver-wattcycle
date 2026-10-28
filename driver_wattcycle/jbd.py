@@ -68,11 +68,19 @@ def extract_frames(data: bytes) -> tuple[list[bytes], bytes]:
         buf = buf[total:]
 
 
-def validate_frame(frame: bytes) -> bytes:
-    """Check start/status/length/checksum/end; return the payload bytes."""
+def validate_frame(frame: bytes, expect_reg: int | None = None) -> bytes:
+    """Check start/status/length/checksum/end; return the payload bytes.
+
+    `expect_reg` additionally pins the response's register byte to the
+    request that asked for it, so a well-framed frame of another register
+    (e.g. cell data spliced into the stream by a corrupted BLE delivery)
+    can never decode as this response.
+    """
     if frame[0] != FRAME_START:
         raise ValueError(f"frame does not start with 0xDD: {frame[:4].hex()}")
     reg = frame[1]
+    if expect_reg is not None and reg != expect_reg:
+        raise ValueError(f"frame register {reg:#04x} does not match request {expect_reg:#04x}")
     if reg & 0x80:  # responses set bit 0x80 on error replies
         raise ValueError(f"BMS error reply, status {reg:#04x}")
     (length,) = struct.unpack_from(">H", frame, 2)

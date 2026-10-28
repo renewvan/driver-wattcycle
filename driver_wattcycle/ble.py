@@ -131,7 +131,7 @@ class WattCycleBle:
                 self._tx_uuid, build_read_command(REG_GENERAL), response=False
             )
             frame = await asyncio.wait_for(self._response, timeout=RESPONSE_TIMEOUT_S)
-            return decode_general(validate_frame(frame))
+            return decode_general(validate_frame(frame, expect_reg=REG_GENERAL))
         except (TimeoutError, BleakError, ValueError, AssertionError) as exc:
             # ValueError: a desynced notification stream yields a frame that
             # fails validation -- a data error, not a link error, but the
