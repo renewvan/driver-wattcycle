@@ -6,9 +6,10 @@ pair (standard JBD ff01/ff02 vs DH04 fff1/fff2), keep the notification
 subscription open for the whole session, send a JBD read command and
 reassemble the fragmented notification response into one frame.
 
-No unit tests here by design (hardware I/O); the frame math it relies on
-is jbd.py, tested against live captures. Verified on the hub against a
-WattCycle 314Ah Super Mini (DH04).
+Hardware I/O is not unit-tested; read() is, against a fake BleakClient
+(tests/test_ble.py). The frame math it relies on is jbd.py, tested against
+live captures. Verified on the hub against a WattCycle 314Ah Super Mini
+(DH04).
 """
 
 from __future__ import annotations
@@ -130,10 +131,14 @@ class WattCycleBle:
                 self._tx_uuid, build_read_command(REG_GENERAL), response=False
             )
             frame = await asyncio.wait_for(self._response, timeout=RESPONSE_TIMEOUT_S)
-        except (TimeoutError, BleakError, AssertionError) as exc:
+            return decode_general(validate_frame(frame))
+        except (TimeoutError, BleakError, ValueError, AssertionError) as exc:
+            # ValueError: a desynced notification stream yields a frame that
+            # fails validation -- a data error, not a link error, but the
+            # safe response is the same: drop the link (resets the buffer)
+            # and let the poll loop retry (see tests/test_ble.py).
             await self.close()
             raise BleError(f"read from {self._mac} failed: {exc}") from exc
-        return decode_general(validate_frame(frame))
 
     async def close(self) -> None:
         client, self._client = self._client, None
