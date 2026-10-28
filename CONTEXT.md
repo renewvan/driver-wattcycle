@@ -59,7 +59,8 @@ one pure function.
 **`temperature_c`**: degrees Celsius, **max** of the BMS's temperature
 probes (4 on the tested DH04). Max, not average or first: a single hot cell
 MOSFET is the alarm-worthy case.
-_Avoid_: publishing per-probe values — battery schema has one field.
+The per-probe array is published separately as `temperatures_c`; this
+headline stays the max of the readable probes.
 
 **`capacity_ah`**: nominal pack capacity in amp-hours, reported raw by the
 BMS frame `0x03` (0.01 Ah resolution; 314.0 on the tested unit). Relayed
@@ -84,10 +85,15 @@ oriented (bulk/absorption/float/…), and the BMS only knows current direction,
 so it never publishes a stage it cannot know. This is coarser than the Venus
 remap of the same bank.
 
-**Not published (schema has no field)**: per-cell voltages, cycle count,
-balancing/protection flags, production date. JBD reports them;
-battery.schema.json has no slot. Candidate future `bms` entity — needs a
-hub PR before any publish.
+**Per-cell BMS data** (hub ADR 0022): `cell_voltages_v` (0x04), derived
+`cell_voltage_max_v`/`min_v`/`delta_v` (all three or none, over non-null
+cells), `cell_balancing` (index-aligned or absent), `temperatures_c`
+(`null` = unreadable probe), `allow_charge`/`allow_discharge` (FET byte),
+`protections` (bits 0-12 by name, `other` for the rest, `[]` = none). All
+live on `battery`, not a separate `bms` entity. The limits are never
+published. Bit layouts are unverified on hardware.
+
+**Not published (schema has no field)**: cycle count, production date.
 
 **Deadband (idle threshold)**: the |current| below which the bank is
 `idle`. Config-constant, not per-message; picked once in implementation.

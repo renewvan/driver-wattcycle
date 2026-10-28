@@ -10,15 +10,42 @@ Same framing as dbus-serialbattery's lltjbd driver.
 
 from __future__ import annotations
 
+import logging
 import struct
 from dataclasses import dataclass
 
 REG_GENERAL = 0x03  # pack info: voltage, current, capacities, SOC, temps
+REG_CELLS = 0x04  # per-cell voltages, 2 bytes big-endian mV each
+MAX_CELLS = 32  # hub battery schema cell_voltages_v maxItems
 FRAME_START = 0xDD
 FRAME_END = 0x77
 # dd + reg + len(2) + cksum(2) + 77
 FRAME_OVERHEAD = 7
 KELVIN_OFFSET = 273.15
+
+logger = logging.getLogger(__name__)
+
+# Raw cell/probe words that mean "no reading" rather than a value (never publish 0).
+INVALID_CELL_MV = (0, 0xFFFF)
+INVALID_TEMP_WORD = (0, 0xFFFF)
+
+# JBD protection bits 0-12, in hub ADR 0022 vocabulary order (battery schema
+# `protections` enum, first 13 names). Unverified on hardware beyond "all clear".
+PROTECTION_NAMES = (
+    "cell_overvoltage",
+    "cell_undervoltage",
+    "pack_overvoltage",
+    "pack_undervoltage",
+    "charge_overtemperature",
+    "charge_undertemperature",
+    "discharge_overtemperature",
+    "discharge_undertemperature",
+    "charge_overcurrent",
+    "discharge_overcurrent",
+    "short_circuit",
+    "internal_fault",
+    "locked",
+)
 
 
 @dataclass(frozen=True)
@@ -31,7 +58,14 @@ class BatteryReading:
     cycles: int
     hardware_version: float
     cell_count: int
-    temperatures_c: tuple[float, ...]
+    temperatures_c: tuple[float | None, ...]  # None = unreadable probe
+    # Optional BMS detail (hub ADR 0022). None = the source did not supply it.
+    balance_word: int | None = None  # 0x03 balance words, 32 bits: bit i = cell i+1
+    protection_word: int | None = None  # 0x03 protection bits 0-15
+    fet_byte: int | None = None  # 0x03 FET status: bit0 charge, bit1 discharge
+    # 0x04 cell volts, one per cell (None = unreadable slot); the whole field is
+    # None when the BMS did not answer 0x04 or its length disagrees with cell_count.
+    cell_voltages_v: tuple[float | None, ...] | None = None
 
 
 def _checksum(data: bytes) -> int:
@@ -113,17 +147,19 @@ def decode_general(payload: bytes) -> BatteryReading:
         capacity,
         cycles,
         _production,
-        _balance,
-        _balance2,
-        _protection,
+        balance_lo,
+        balance_hi,
+        protection,
         version,
         soc,
-        _fet,
+        fet,
         cell_count,
         temp_count,
-    ) = struct.unpack_from(">HhHHHHhHHBBBBB", payload)
-    temps = tuple(
-        struct.unpack_from(">H", payload, 23 + 2 * t)[0] / 10 - KELVIN_OFFSET
+    ) = struct.unpack_from(">HhHHHHHHHBBBBB", payload)
+    temps: tuple[float | None, ...] = tuple(
+        _decode_temp(struct.unpack_from(">H", payload, 23 + 2 * t)[0])
+        if len(payload) >= 25 + 2 * t
+        else None
         for t in range(temp_count)
     )
     return BatteryReading(
@@ -136,4 +172,29 @@ def decode_general(payload: bytes) -> BatteryReading:
         hardware_version=float(f"{version >> 4 & 0x0F}.{version & 0x0F}"),
         cell_count=cell_count,
         temperatures_c=temps,
+        balance_word=balance_lo | balance_hi << 16,
+        protection_word=protection,
+        fet_byte=fet,
     )
+
+
+def _decode_temp(word: int) -> float | None:
+    """Probe word (tenths of Kelvin) to degC; None for the no-sensor words."""
+    if word in INVALID_TEMP_WORD:
+        return None
+    return word / 10 - KELVIN_OFFSET
+
+
+def decode_cells(payload: bytes, cell_count: int) -> tuple[float | None, ...] | None:
+    """Decode the payload of a 0x04 (cell voltages) response to volts, 3 decimals.
+
+    2 bytes big-endian millivolts per cell. A 0 / 0xFFFF slot is unreadable
+    and becomes None (the array keeps its length). Returns None when the
+    payload length disagrees with the 0x03 `cell_count`, or the count is
+    zero or beyond the schema's 32: the cell count is then unknown, so no
+    array is better than a padded or truncated one (hub ADR 0022).
+    """
+    if cell_count == 0 or cell_count > MAX_CELLS or len(payload) != 2 * cell_count:
+        return None
+    mv = struct.unpack(f">{cell_count}H", payload)
+    return tuple(None if v in INVALID_CELL_MV else round(v / 1000, 3) for v in mv)

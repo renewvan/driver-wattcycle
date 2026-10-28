@@ -71,3 +71,47 @@ def test_read_raises_ble_error_and_disconnects_on_corrupt_frame(monkeypatch) -> 
     with pytest.raises(BleError, match="checksum"):
         asyncio.run(ble.read())
     assert fake.disconnected
+
+
+CELLS_CHUNK = bytes.fromhex("dd0400080d030d060d050d05ffb177")
+
+
+class RegisterAwareClient(FakeBleakClient):
+    """Answers each read command with the frame registered for that register."""
+
+    def __init__(self, replies: dict[int, list[bytes]]) -> None:
+        super().__init__([])
+        self._replies = replies
+
+    async def write_gatt_char(self, _uuid, data, response=False) -> None:
+        for chunk in self._replies.get(data[2], []):
+            self._on_notify(0, bytearray(chunk))
+
+
+def make_register_ble(monkeypatch, replies: dict[int, list[bytes]]) -> WattCycleBle:
+    fake = RegisterAwareClient(replies)
+    monkeypatch.setattr(ble_module, "BleakClient", lambda *a, **k: fake)
+    return WattCycleBle(mac="AA:BB:CC:DD:EE:FF", uuid_variant="dh04", connect_timeout_s=1)
+
+
+def test_read_attaches_cell_voltages_from_0x04(monkeypatch) -> None:
+    ble = make_register_ble(monkeypatch, {0x03: VALID_CHUNKS, 0x04: [CELLS_CHUNK]})
+    reading = asyncio.run(ble.read())
+    assert reading.cell_voltages_v == (3.331, 3.334, 3.333, 3.333)
+
+
+def test_read_without_cell_answer_still_returns_pack_info_and_no_cells(monkeypatch) -> None:
+    monkeypatch.setattr(ble_module, "RESPONSE_TIMEOUT_S", 0.05)
+    ble = make_register_ble(monkeypatch, {0x03: VALID_CHUNKS})  # silent on 0x04
+    reading = asyncio.run(ble.read())
+    assert reading.voltage_v == pytest.approx(13.35)
+    assert reading.cell_voltages_v is None
+
+
+def test_read_cell_count_mismatch_publishes_no_cells(monkeypatch) -> None:
+    from driver_wattcycle.jbd import _checksum
+
+    body = bytes.fromhex("000a0d030d060d050d050d05")
+    five_cells = b"\xdd\x04" + body + _checksum(body).to_bytes(2, "big") + b"\x77"
+    ble = make_register_ble(monkeypatch, {0x03: VALID_CHUNKS, 0x04: [five_cells]})
+    assert asyncio.run(ble.read()).cell_voltages_v is None  # 0x03 says 4 cells
