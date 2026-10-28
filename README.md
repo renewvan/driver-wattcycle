@@ -112,7 +112,16 @@ BLE only — no cable, no pairing:
 4. Requirements on the host: BlueZ running with the adapter unblocked
    (`rfkill unblock bluetooth`), and exclusive access — only one client can
    hold the battery's BLE link at a time, so this driver must be the only
-   thing talking to that MAC.
+   thing talking to that MAC. Same exclusivity applies *within* the link:
+   no second D-Bus client may subscribe to the BMS's notify characteristic
+   (`fff1`/`ff01`) while the driver runs — verified 2026-10-28 with `btmon`
+   (`.scratch/ble-second-notify-client`): the second subscription sends no
+   ATT traffic (the BMS cannot know about it), yet BlueZ's multi-client
+   notification fan-out corrupts the fragmented stream delivered to the
+   driver (byte-level re-splicing; the on-air frames stay pristine). The
+   driver survives each bad read (hardened poll loop) but loses polls until
+   the second client unsubscribes. Debuggers: sniff passively with
+   `btmon`, or stop the driver first.
 5. Stale link recovery: a killed process (`kill -9`, power loss) can leave
    the BMS connected at the controller level. A connected BMS stops
    advertising, so scan-based reconnect fails. Fix: `sudo systemctl restart
