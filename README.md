@@ -53,16 +53,22 @@ house bank and no Venus remap publishes that id):
 - `temperature_c` — number, max of the BMS's temperature probes (4 on the
   tested DH04), frame `0x03`
 - `time_to_go_s` — whole seconds, derived `remaining_ah / |discharge
-  current|`; omitted while charging or inside the current deadband
-- `charge_state` — `"discharging"` only; omitted otherwise. The schema's
+  current|`; omitted while charging or inside the current deadband, and the
+  retained topic is **cleared** (empty retained payload) so it cannot linger
+- `capacity_ah` — number, nominal pack capacity, **raw** from frame `0x03`
+  (0.01 Ah resolution; 314.0 on the tested unit), relayed unchanged
+- `remaining_ah` — number, remaining pack capacity, **raw** from frame
+  `0x03` (the BMS's coulomb-counted fuel gauge); publish both so consumers
+  can cross-check `soc_pct` against `remaining_ah / capacity_ah`
+- `charge_state` — `"discharging"` only; otherwise omitted and the retained
+  topic cleared. The schema's
   enum is charger-stage oriented (bulk/absorption/float…) and a BMS only
   knows current direction, so per the schema's guidance only the state it
   actually knows is published.
 
 Not published (JBD reports them, but `battery.schema.json` has no field —
 candidate future schema extension, needs a hub PR first): per-cell
-voltages, cycle count, nominal/remaining capacity Ah, protection/balancing
-flags, production date.
+voltages, cycle count, protection/balancing flags, production date.
 
 **Command topics**: none — the JBD BLE protocol is treated read-only;
 settings writes are out of scope.

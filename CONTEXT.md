@@ -61,6 +61,17 @@ probes (4 on the tested DH04). Max, not average or first: a single hot cell
 MOSFET is the alarm-worthy case.
 _Avoid_: publishing per-probe values — battery schema has one field.
 
+**`capacity_ah`**: nominal pack capacity in amp-hours, reported raw by the
+BMS frame `0x03` (0.01 Ah resolution; 314.0 on the tested unit). Relayed
+unchanged — consumers cross-check `soc_pct` against
+`remaining_ah / capacity_ah`.
+_Avoid_: deriving it from energy counters — it is a BMS-reported constant.
+
+**`remaining_ah`**: remaining pack capacity in amp-hours, reported raw by
+the BMS frame `0x03` (not recomputed here). The BMS's own coulomb-counted
+fuel gauge; also the input to `time_to_go_s`.
+_Avoid_: integrating current locally — the BMS already counts coulombs.
+
 **`time_to_go_s`**: estimated seconds until empty at the present discharge
 rate, derived `remaining_ah / |current_a|`. Omitted (not zero) while
 charging or in the near-zero-current deadband — a made-up number is worse
@@ -74,9 +85,9 @@ so it never publishes a stage it cannot know. This is coarser than the Venus
 remap of the same bank.
 
 **Not published (schema has no field)**: per-cell voltages, cycle count,
-nominal/remaining capacity (Ah), balancing/protection flags, production
-date. JBD reports them; battery.schema.json has no slot. Candidate future
-`bms` entity — needs a hub PR before any publish.
+balancing/protection flags, production date. JBD reports them;
+battery.schema.json has no slot. Candidate future `bms` entity — needs a
+hub PR before any publish.
 
 **Deadband (idle threshold)**: the |current| below which the bank is
 `idle`. Config-constant, not per-message; picked once in implementation.

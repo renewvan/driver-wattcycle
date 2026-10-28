@@ -58,5 +58,9 @@ def live_fields(reading: BatteryReading) -> dict[str, float | int | str | None]:
         "temperature_c": max_temperature_c(reading.temperatures_c),
         "time_to_go_s": time_to_go_s(reading.remaining_ah, reading.current_a),
         "charge_state": charge_state(reading.current_a),
+        # Raw BMS-reported fuel gauge (frame 0x03 words), relayed unchanged —
+        # consumers cross-check soc_pct against remaining/capacity.
+        "capacity_ah": round(reading.capacity_ah, 2),
+        "remaining_ah": round(reading.remaining_ah, 2),
     }
     return {k: v for k, v in fields.items() if v is not None}

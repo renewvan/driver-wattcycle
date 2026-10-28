@@ -81,6 +81,12 @@ class Publisher:
     def publish(self, topic: str, payload: str) -> None:
         self._client.publish(topic, payload=payload, qos=1, retain=True)
 
+    def clear(self, topic: str) -> None:
+        """Retract a retained topic (empty retained payload), so a reading
+        that stopped being valid does not linger on the bus. Same convention
+        as driver-venus's publish(None)."""
+        self._client.publish(topic, payload=None, qos=1, retain=True)
+
     def subscribe(self, topic: str, callback: Callable[[str], None]) -> None:
         self._subscriptions[topic] = callback
         self._client.subscribe(topic, qos=1)

@@ -38,10 +38,24 @@ def identity_topics(config: AppConfig) -> dict[str, str]:
     return identity
 
 
-async def read_and_publish(publisher: Publisher, ble: WattCycleBle, config: AppConfig) -> None:
-    """One poll: read the BMS and publish every derived live field."""
+async def read_and_publish(
+    publisher: Publisher, ble: WattCycleBle, config: AppConfig, last_props: set[str]
+) -> None:
+    """One poll: read the BMS and publish every derived live field.
+
+    Computed fields (time_to_go_s, charge_state) drop out of live_fields
+    when the bank is idle/charging; the topics are retained, so a field
+    absent from this poll that was published last poll is cleared (an empty
+    retained payload), not left stale on the bus. `last_props` is the
+    caller's record of the previous poll, updated in place.
+    """
     reading = await ble.read()
-    for prop, value in live_fields(reading).items():
+    fields = live_fields(reading)
+    for prop in last_props - fields.keys():
+        publisher.clear(_topic(config.driver.id, prop))
+    last_props.clear()
+    last_props.update(fields)
+    for prop, value in fields.items():
         publisher.publish(_topic(config.driver.id, prop), json.dumps(value))
     logger.debug(
         "battery %s: %.2fV %.2fA %d%%",
@@ -76,9 +90,12 @@ async def run(config: AppConfig) -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, task.cancel)
     try:
+        # Props published on the previous poll, so fields that go absent
+        # (time_to_go_s, charge_state when idle) get retracted, not left stale.
+        last_props: set[str] = set()
         while True:
             try:
-                await read_and_publish(publisher, ble, config)
+                await read_and_publish(publisher, ble, config, last_props)
             except BleError as exc:
                 logger.warning(
                     "BLE read failed (%s); retrying in %.0fs", exc, config.driver.retry_delay_s

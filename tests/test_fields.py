@@ -11,10 +11,12 @@ import pytest
 
 from driver_wattcycle.fields import (
     charge_state,
+    live_fields,
     max_temperature_c,
     power_w,
     time_to_go_s,
 )
+from driver_wattcycle.jbd import BatteryReading
 
 # 13.35 V x -0.43 A, worked by hand
 LIVE_POWER_W = -5.7405
@@ -53,3 +55,23 @@ def test_payload_rounding_strips_float_artifacts() -> None:
 def test_max_temperature_c_picks_the_hottest_probe() -> None:
     assert max_temperature_c((13.05, 13.05, 13.15, 13.35)) == pytest.approx(13.35)
     assert max_temperature_c(()) is None
+
+
+def test_live_fields_relays_bms_reported_capacity_unchanged() -> None:
+    # Values from the live capture: the BMS reports both words raw in frame
+    # 0x03; they must reach the bus as-is (no derivation), so consumers can
+    # cross-check soc_pct against remaining/capacity.
+    reading = BatteryReading(
+        voltage_v=13.35,
+        current_a=-0.43,
+        soc_pct=78,
+        capacity_ah=314.0,
+        remaining_ah=245.28,
+        cycles=8,
+        hardware_version=3.5,
+        cell_count=4,
+        temperatures_c=(13.05, 13.05, 13.15, 13.35),
+    )
+    fields = live_fields(reading)
+    assert fields["capacity_ah"] == 314.0
+    assert fields["remaining_ah"] == 245.28
