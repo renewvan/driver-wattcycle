@@ -2,7 +2,7 @@
 
 Just for WattCycle: BLE driver for WattCycle JBD BMS batteries, publishing battery telemetry over MQTT.
 
-Scaffolded from `renewvan/driver-tank`'s reference shape via `renewvan/skills`'
+Scaffolded from `renewvan/driver-template` via `renewvan/skills`'
 `scaffold-driver` skill (per the **Driver** term in `hub/docs/architecture.md`'s
 Terminology section: anything that publishes one specific device or feed
 onto the renewvan bus, normalized into the device model). Layout: pure,
