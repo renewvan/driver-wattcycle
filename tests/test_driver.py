@@ -3,7 +3,7 @@
 The battery topics are retained; when a computed field (time_to_go_s,
 charge_state) drops out of live_fields the previous value must be cleared
 (empty retained payload), or it lingers on the bus forever — observed live
-as charge_state "discharging" at 0.0 A (see .scratch/stale-retained-live-fields).
+as charge_state "discharging" at 0.0 A.
 """
 
 from __future__ import annotations
