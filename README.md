@@ -143,8 +143,8 @@ BLE only — no cable, no pairing:
    hold the battery's BLE link at a time, so this driver must be the only
    thing talking to that MAC. Same exclusivity applies *within* the link:
    no second D-Bus client may subscribe to the BMS's notify characteristic
-   (`fff1`/`ff01`) while the driver runs — verified 2026-10-28 with `btmon`
-   (`.scratch/ble-second-notify-client`): the second subscription sends no
+   (`fff1`/`ff01`) while the driver runs — verified 2026-10-28 with `btmon`:
+   the second subscription sends no
    ATT traffic (the BMS cannot know about it), yet BlueZ's multi-client
    notification fan-out corrupts the fragmented stream delivered to the
    driver (byte-level re-splicing; the on-air frames stay pristine). The
