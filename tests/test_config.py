@@ -12,7 +12,7 @@ def test_load_config_defaults() -> None:
     assert config.driver.hci_adapter == "hci0"
     assert config.driver.connect_timeout_s == 10.0
     assert config.driver.retry_delay_s == 5.0
-    assert config.driver.name is None
+    assert config.driver.name == "WattCycle 314Ah"
 
 
 def test_load_config_local_override(tmp_path: Path) -> None:
