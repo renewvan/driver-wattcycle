@@ -6,9 +6,19 @@ from driver_wattcycle.driver import identity_topics
 from driver_wattcycle.publisher import HEALTH_TOPIC, INFO_TOPIC, Publisher
 
 
-def test_identity_publishes_driver_only_without_name() -> None:
+def test_identity_publishes_default_name() -> None:
     config = load_config()
     identity = identity_topics(config)
+    assert identity == {
+        "renewvan/battery/wattcycle/driver": json.dumps("wattcycle"),
+        "renewvan/battery/wattcycle/name": json.dumps("WattCycle 314Ah"),
+    }
+
+
+def test_identity_publishes_driver_only_when_name_empty(tmp_path) -> None:
+    local = tmp_path / "config.ini"
+    local.write_text("[driver]\nname =\n")
+    identity = identity_topics(load_config(local_path=local))
     assert identity == {"renewvan/battery/wattcycle/driver": json.dumps("wattcycle")}
 
 
@@ -29,6 +39,11 @@ def test_on_connect_republishes_identity_retained_between_info_and_online() -> N
     client = MagicMock()
     publisher._on_connect(client, None, {}, 0)
     topics = [c.args[0] for c in client.publish.call_args_list]
-    assert topics == [INFO_TOPIC, "renewvan/battery/wattcycle/driver", HEALTH_TOPIC]
+    assert topics == [
+        INFO_TOPIC,
+        "renewvan/battery/wattcycle/driver",
+        "renewvan/battery/wattcycle/name",
+        HEALTH_TOPIC,
+    ]
     for call in client.publish.call_args_list:
         assert call.kwargs["retain"] is True
