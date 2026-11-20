@@ -5,7 +5,7 @@ Just for WattCycle: BLE driver for WattCycle JBD BMS batteries, publishing batte
 Scaffolded from `renewvan/driver-template` via `renewvan/skills`'
 `scaffold-driver` skill (per the **Driver** term in `hub/docs/architecture.md`'s
 Terminology section: anything that publishes one specific device or feed
-onto the renewvan bus, normalized into the device model). Layout: pure,
+onto the Renewvan bus, normalized into the device model). Layout: pure,
 unit-testable conversion math with no I/O, a layered
 `config.default.ini`/`config.ini` loader (`config.py`), a persistent MQTT
 publisher with LWT (`publisher.py`), a thin publish loop (`driver.py`), a
